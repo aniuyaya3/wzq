@@ -36,7 +36,7 @@ npm run test:ui # UI 功能仿真：jsdom 驱动完整对弈链路（需先 npm 
 npm run deploy  # 部署到 Cloudflare Workers
 ```
 ## 手动部署
-- actions > settings 
+- settings 以下两变量
 
 ```bash
 CLOUDFLARE_ACCOUNT_ID
