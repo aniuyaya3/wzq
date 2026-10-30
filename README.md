@@ -35,7 +35,15 @@ npm test        # AI 仿真测试：战术题 + 陪练对局 + 性能（node tes
 npm run test:ui # UI 功能仿真：jsdom 驱动完整对弈链路（需先 npm install，15 项）
 npm run deploy  # 部署到 Cloudflare Workers
 ```
+## 手动部署
+- actions > settings 
 
+```bash
+CLOUDFLARE_ACCOUNT_ID
+```
+```bash
+CLOUDFLARE_API_TOKEN
+```
 ## 结构
 
 - `src/index.js`：Worker 入口 + Durable Object 联机房间（`GameRoom`，状态持久化、12 小时无人活动自动清理）。注意：入口模块只能导出 handler 与 DO 类——workerd 会拒绝字符串等其它类型的顶层导出并导致整个 Worker 启动失败，因此引擎与页面拆为独立模块由入口 import
