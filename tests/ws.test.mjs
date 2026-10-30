@@ -64,6 +64,7 @@ try {
 
   white.send({ type: 'move', x: 8, y: 7 });
   await black.waitCount('move', 2);
+  await white.waitCount('move', 2); // 等白方也收到自己落子的广播，避免公网延迟下计数未齐就采样
   ok('白棋落子广播到黑方', black.count('move') === 2);
 
   // 非法落子（占用点）应被服务端拒绝
