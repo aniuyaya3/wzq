@@ -782,21 +782,59 @@ function notation(x, y) { return 'ABCDEFGHIJKLMNO'.charAt(x) + (15 - y); }
 function stoneName(p) { return p === 1 ? '黑棋' : '白棋'; }
 
 // ---------- 声音 ----------
+// 落子声不用蜂鸣音，改为合成「棋子扣木盘」的敲击声：短促噪声咔哒 + 低频木质共鸣
 var audioCtx = null;
-function beep(freq, dur, type, vol, when) {
-  if (!soundOn) return;
+function ensureAudio() {
+  if (!soundOn) return null;
   try {
     if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    var t = audioCtx.currentTime + (when || 0);
-    var o = audioCtx.createOscillator(), g = audioCtx.createGain();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    return audioCtx;
+  } catch (e) { return null; }
+}
+// 首次手势时解锁音频（移动端自动播放策略要求）
+document.addEventListener('pointerdown', function () { ensureAudio(); }, { passive: true });
+function beep(freq, dur, type, vol, when) {
+  if (!soundOn) return;
+  var ac = ensureAudio(); if (!ac) return;
+  try {
+    var t = ac.currentTime + (when || 0);
+    var o = ac.createOscillator(), g = ac.createGain();
     o.type = type || 'sine'; o.frequency.value = freq;
     g.gain.setValueAtTime(vol || 0.12, t);
     g.gain.exponentialRampToValueAtTime(0.001, t + dur);
-    o.connect(g); g.connect(audioCtx.destination);
+    o.connect(g); g.connect(ac.destination);
     o.start(t); o.stop(t + dur);
   } catch (e) {}
 }
-function sndPlace() { beep(660, 0.07, 'triangle', 0.15); }
+function sndPlace() {
+  if (!soundOn) return;
+  var ac = ensureAudio(); if (!ac) return;
+  try {
+    var t = ac.currentTime;
+    // 咔哒：白噪声短脉冲过带通（石质脆响）
+    var len = Math.max(1, Math.floor(ac.sampleRate * 0.055));
+    var buf = ac.createBuffer(1, len, ac.sampleRate);
+    var data = buf.getChannelData(0);
+    for (var i = 0; i < len; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / len);
+    var src = ac.createBufferSource(); src.buffer = buf;
+    var bp = ac.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 1750; bp.Q.value = 0.9;
+    var ng = ac.createGain();
+    ng.gain.setValueAtTime(0.85, t);
+    ng.gain.exponentialRampToValueAtTime(0.001, t + 0.07);
+    src.connect(bp); bp.connect(ng); ng.connect(ac.destination);
+    src.start(t);
+    // 木盘共鸣：低频正弦快速滑落 + 衰减
+    var o = ac.createOscillator(), og = ac.createGain();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(235, t);
+    o.frequency.exponentialRampToValueAtTime(140, t + 0.09);
+    og.gain.setValueAtTime(0.4, t);
+    og.gain.exponentialRampToValueAtTime(0.001, t + 0.11);
+    o.connect(og); og.connect(ac.destination);
+    o.start(t); o.stop(t + 0.12);
+  } catch (e) {}
+}
 function sndWin() { [523, 659, 784, 1047].forEach(function (f, i) { beep(f, 0.22, 'sine', 0.12, i * 0.11); }); }
 function sndLose() { [392, 330, 262].forEach(function (f, i) { beep(f, 0.22, 'sine', 0.1, i * 0.12); }); }
 function vibrate(p) { if (navigator.vibrate) { try { navigator.vibrate(p); } catch (e) {} } }
