@@ -31,7 +31,8 @@ AI 引擎位于 `src/index.js` 的 `ENGINE_JS`（纯逻辑，可在浏览器与 
 
 ```bash
 npm run dev     # wrangler dev 本地运行
-npm test        # AI 仿真测试：战术题 + 陪练对局 + 性能（node tests/ai.test.mjs）
+npm test        # AI 仿真测试：战术题 + 陪练对局 + 性能（node tests/ai.test.mjs，13 项）
+npm run test:ui # UI 功能仿真：jsdom 驱动完整对弈链路（需先 npm install，15 项）
 npm run deploy  # 部署到 Cloudflare Workers
 ```
 
