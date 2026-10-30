@@ -1,7 +1,7 @@
 // UI 功能仿真（jsdom）：页面脚本零报错、开局/落子/AI 应招/提示/悔棋全链路
 // 运行前先装依赖：npm install（jsdom 在 devDependencies）；运行：npm run test:ui
 import { JSDOM } from 'jsdom';
-import { HTML_PAGE } from '../src/index.js';
+import { HTML_PAGE } from '../src/page.js';
 
 const html = HTML_PAGE;
 const errors = [];

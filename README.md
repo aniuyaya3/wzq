@@ -12,7 +12,7 @@
 
 ## AI 设计
 
-AI 引擎位于 `src/index.js` 的 `ENGINE_JS`（纯逻辑，可在浏览器与 Node 中运行）：
+AI 引擎位于 `src/engine.js` 的 `ENGINE_JS`（纯逻辑，可在浏览器与 Node 中运行）：
 
 1. **棋型评估**：连子数 × 开放端计分，识别活四 / 冲四 / 活三 / 眠三等棋型，并识别「跳一格」断点棋型（如 `XX_X`）
 2. **组合威胁**：单点评估阶段直接识别双四、四三、双三等必杀组合并给予高额加分——进攻能造杀，防守会抢占对方的组合点
@@ -38,6 +38,10 @@ npm run deploy  # 部署到 Cloudflare Workers
 
 ## 结构
 
-- `src/index.js`：Worker 入口 + Durable Object 联机房间（`GameRoom`）+ AI 引擎 + 全部前端页面
-- `tests/ai.test.mjs`：AI 引擎 Node 仿真测试
+- `src/index.js`：Worker 入口 + Durable Object 联机房间（`GameRoom`）。注意：入口模块只能导出 handler 与 DO 类——workerd 会拒绝字符串等其它类型的顶层导出并导致整个 Worker 启动失败，因此引擎与页面拆为独立模块由入口 import
+- `src/engine.js`：AI 引擎源码（`ENGINE_JS`）
+- `src/page.js`：前端页面（内嵌引擎与全部 UI 逻辑）
+- `tests/ai.test.mjs`：AI 引擎 Node 仿真测试（13 项）
+- `tests/ui.test.mjs`：UI 功能仿真（jsdom，15 项）
+- `tests/ws.test.mjs`：联机协议端到端测试（10 项；需先 `npx wrangler dev --port 8787 --local` 再 `npm run test:ws`）
 - 推送到 `main` 后由 GitHub Actions 自动部署（`.github/workflows/deploy.yml`）

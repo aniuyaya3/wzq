@@ -5,7 +5,8 @@
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "test": "node tests/ai.test.mjs",
-    "test:ui": "node tests/ui.test.mjs"
+    "test:ui": "node tests/ui.test.mjs",
+    "test:ws": "node tests/ws.test.mjs"
   },
   "devDependencies": {
     "jsdom": "^30.1.3"

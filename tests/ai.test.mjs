@@ -1,7 +1,7 @@
 // AI 引擎仿真测试：战术题 + 陪练对局 + 性能
 // 运行：node tests/ai.test.mjs
 import vm from 'node:vm';
-import { ENGINE_JS } from '../src/index.js';
+import { ENGINE_JS } from '../src/engine.js';
 
 const ctx = vm.createContext({});
 vm.runInContext(ENGINE_JS, ctx);
