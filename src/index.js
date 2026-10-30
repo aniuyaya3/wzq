@@ -165,12 +165,22 @@ export class GameRoom {
         if (requester) this.sendTo(requester.socket, { type: "draw_deny" });
         break;
       }
+      case "bye": {
+        // 客户端主动离开：立即摘除并通知对方，不等连接关闭事件
+        const before = this.sessions.length;
+        this.sessions = this.sessions.filter(s => s.socket !== ws);
+        if (this.sessions.length !== before) this.broadcast({ type: "leave" });
+        try { ws.close(); } catch {}
+        break;
+      }
     }
   }
 
   webSocketClose(ws) {
+    const before = this.sessions.length;
     this.sessions = this.sessions.filter(s => s.socket !== ws);
-    this.broadcast({ type: "leave" });
+    // 仅在确实摘除了一名玩家时通知，避免 bye + close 双重通知
+    if (this.sessions.length !== before) this.broadcast({ type: "leave" });
   }
 
   checkWin(x, y, p) {

@@ -479,7 +479,12 @@ function showGame() {
 function showHome() {
   $('gameView').classList.remove('show');
   $('homeView').style.display = '';
-  if (ws) { try { ws.close(); } catch (e) {} ws = null; }
+  if (ws) {
+    // 先发 bye 让对方立即看到离开通知，不等 TCP 关闭握手（移动端切后台时握手可能延迟很久）
+    try { if (mode === 'online' && ws.readyState === 1) ws.send(JSON.stringify({ type: 'bye' })); } catch (e) {}
+    try { ws.close(); } catch (e) {}
+    ws = null;
+  }
   stopTimer(); renderStats();
 }
 function resetGame() {
@@ -810,7 +815,7 @@ function connectOnline(id, isCreator) {
       ]);
     }
     if (msg.type === 'draw_deny') toast('对方拒绝了和棋提议');
-    if (msg.type === 'leave') { if (!gameOver) { setStatus('对方已离开'); toast('对方已离开房间'); } }
+    if (msg.type === 'leave') { gameOver = true; stopTimer(); setStatus('对方已离开房间'); toast('对方已离开房间'); draw(); }
   };
   ws.onclose = function () { if (mode === 'online' && !gameOver) setStatus('连接已断开，请返回主页重试'); };
   ws.onerror = function () { toast('连接失败，请稍后重试'); };

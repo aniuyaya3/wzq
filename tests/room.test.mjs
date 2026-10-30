@@ -87,5 +87,29 @@ ok('房主选白：加入者执黑', tB.last('welcome')?.player === 1);
 await room2.webSocketMessage(tB, JSON.stringify({ type: 'move', x: 0, y: 0 }));
 ok('执黑加入者可先行', tA.last('move')?.player === 1);
 
+// 8. 离开通知：bye 立即通知且只通知一次；直接断线也通知一次
+const state3 = new FakeState();
+let room3 = await newRoom(state3);
+await room3.fetch(req('?color=1'));
+await room3.fetch(req(''));
+const uA = state3._sockets[0], uB = state3._sockets[1];
+await room3.webSocketMessage(uA, JSON.stringify({ type: 'bye' }));
+ok('bye 后对方收到 leave', uB.types().filter((t) => t === 'leave').length === 1);
+ok('bye 后会话摘除', room3.sessions.length === 1 && room3.sessions[0].player === 2);
+await room3.webSocketClose(uA);
+ok('bye 后再 close 不重复通知', uB.types().filter((t) => t === 'leave').length === 1);
+
+// 9. 直接断线（无 bye）：对方收到一次 leave；重建后断线同样能通知
+const state4 = new FakeState();
+let room4 = await newRoom(state4);
+await room4.fetch(req('?color=1'));
+await room4.fetch(req(''));
+const vA = state4._sockets[0], vB = state4._sockets[1];
+room4 = await newRoom(state4); // 模拟回收重建后再断线
+vB.close();
+await room4.webSocketClose(vB);
+ok('重建后断线仍通知对方', vA.types().filter((t) => t === 'leave').length === 1);
+ok('断线后会话摘除', room4.sessions.length === 1);
+
 console.log(`\n结果：${pass} 通过 / ${fail} 失败`);
 process.exit(fail ? 1 : 0);

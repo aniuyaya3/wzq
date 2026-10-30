@@ -83,6 +83,19 @@ try {
   ok('第三人被拒', cResult === 'rejected', cResult);
 
   A.ws.close(); B.ws.close();
+
+  // 离开通知：新房间里一方发 bye，另一方应立即收到且只收到一次 leave
+  const room2 = 'bye' + Math.floor(Math.random() * 900 + 100);
+  const D = client('退出方');
+  const E = client('留守方');
+  await D.connect(`${BASE}/room/${room2}/ws?color=1`);
+  await E.connect(`${BASE}/room/${room2}/ws`);
+  await E.waitCount('start', 1);
+  D.send({ type: 'bye' });
+  await E.waitCount('leave', 1);
+  await sleep(600);
+  ok('bye 离开通知只达一次', E.count('leave') === 1, 'leave x' + E.count('leave'));
+  D.ws.close(); E.ws.close();
 } catch (e) {
   fail++; console.log('  ❌ 异常：' + e.message);
 }
