@@ -14,6 +14,23 @@ import { HTML_PAGE } from './page.js';
 //  5. 强制着法裁剪：对方有成五点时，非赢即堵，别无选择
 
 
+// 棋谱紧凑编码：每手 1 个字符（code = y*15+x，0–224）；执子由手数奇偶决定
+// （黑棋必为第 1、3、5… 手，与服务端回合校验一致），全盘 225 手仅 225 字节。
+function encodeMoves(moves) {
+  let s = '';
+  for (const m of moves) s += String.fromCharCode(m.y * 15 + m.x);
+  return s;
+}
+function decodeMoves(s) {
+  const out = [];
+  if (typeof s !== 'string') return out;
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    out.push({ x: c % 15, y: Math.floor(c / 15), player: i % 2 === 0 ? 1 : 2 });
+  }
+  return out;
+}
+
 // ============ Durable Object：联机房间 ============
 const ROOM_TTL_MS = 12 * 60 * 60 * 1000; // 房间 12 小时无人活动自动清理
 
@@ -27,6 +44,7 @@ export class GameRoom {
     this.draw = false;
     this.creatorColor = 1;
     this.lastActive = 0;
+    this.alarmAt = 0; // 当前已设置的清理闹钟时间（用于节流，避免每手都重设）
     // 关键：房间对象会被 Cloudflare 休眠/回收后重建（WebSocket 连接与附件仍保留），
     // 若只靠内存变量，先进房的玩家会从 sessions 中消失，后进者被误判为房主。
     // 因此构造时从持久化存储 + 仍存活的连接恢复房间状态。
@@ -40,13 +58,15 @@ export class GameRoom {
         // 已过期（闹钟未触发的兜底）：直接丢弃旧房间
         try { await this.state.storage.delete("room"); } catch {}
       } else if (saved) {
-        this.moves = Array.isArray(saved.moves) ? saved.moves : [];
+        // v2：棋谱为紧凑编码字符串；旧版为 moves 数组，两者都兼容
+        this.moves = saved.v === 2 ? decodeMoves(saved.m) : (Array.isArray(saved.moves) ? saved.moves : []);
         this.turn = saved.turn === 2 ? 2 : 1;
         this.winner = saved.winner || 0;
         this.draw = !!saved.draw;
         this.creatorColor = saved.creatorColor === 2 ? 2 : 1;
         this.lastActive = saved.ts || 0;
       }
+      this.alarmAt = (await this.state.storage.getAlarm()) || 0;
     } catch {}
     const seen = new Set();
     this.sessions = [];
@@ -64,22 +84,27 @@ export class GameRoom {
     this.lastActive = Date.now();
     try {
       await this.state.storage.put("room", {
-        moves: this.moves, turn: this.turn, winner: this.winner,
+        v: 2, m: encodeMoves(this.moves), turn: this.turn, winner: this.winner,
         draw: this.draw, creatorColor: this.creatorColor, ts: this.lastActive,
       });
-      // 每次活动都把清理闹钟顺延到 12 小时后
-      await this.state.storage.setAlarm(this.lastActive + ROOM_TTL_MS);
+      // 闹钟节流：目标时间比已设闹钟晚 10 分钟以上才重设，避免每手多写一行
+      const target = this.lastActive + ROOM_TTL_MS;
+      if (!this.alarmAt || target - this.alarmAt > 10 * 60 * 1000) {
+        await this.state.storage.setAlarm(target);
+        this.alarmAt = target;
+      }
     } catch {}
   }
 
   async alarm() {
     // 12 小时无人活动触发：房内还有人（连接存活）则再顺延 12 小时，无人则清理房间
     if (this.state.getWebSockets().length > 0) {
-      try { await this.state.storage.setAlarm(Date.now() + ROOM_TTL_MS); } catch {}
+      const next = Date.now() + ROOM_TTL_MS;
+      try { await this.state.storage.setAlarm(next); this.alarmAt = next; } catch {}
       return;
     }
     this.moves = []; this.turn = 1; this.winner = 0; this.draw = false;
-    this.creatorColor = 1; this.sessions = []; this.lastActive = 0;
+    this.creatorColor = 1; this.sessions = []; this.lastActive = 0; this.alarmAt = 0;
     try { await this.state.storage.delete("room"); } catch {}
     try { await this.state.storage.deleteAlarm(); } catch {}
   }

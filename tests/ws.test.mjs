@@ -1,6 +1,6 @@
 // 联机协议端到端测试：需先启动本地 Worker：npx wrangler dev --port 8787 --local
 // 运行：node tests/ws.test.mjs（连不上本地服务会直接失败）
-const BASE = 'ws://127.0.0.1:8787';
+const BASE = process.env.WS_BASE || 'ws://127.0.0.1:8787';
 let pass = 0, fail = 0;
 const ok = (name, cond, extra = '') => { cond ? (pass++, console.log('  ✅ ' + name)) : (fail++, console.log('  ❌ ' + name + ' ' + extra)); };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

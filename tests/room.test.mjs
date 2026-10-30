@@ -29,11 +29,13 @@ class FakeState {
     this._alarm = null;
     const data = this._data;
     const self = this;
+    this.putCount = 0;
+    this.alarmSetCount = 0;
     this.storage = {
       async get(k) { return data.get(k); },
-      async put(k, v) { data.set(k, v); },
+      async put(k, v) { self.putCount++; data.set(k, v); },
       async delete(k) { data.delete(k); },
-      async setAlarm(t) { self._alarm = t; },
+      async setAlarm(t) { self.alarmSetCount++; self._alarm = t; },
       async getAlarm() { return self._alarm; },
       async deleteAlarm() { self._alarm = null; },
     };
@@ -143,6 +145,31 @@ const state6 = new FakeState();
 state6._data.set('room', { moves: [{ x: 1, y: 1, player: 1 }], turn: 2, winner: 0, draw: false, creatorColor: 1, ts: Date.now() - H12 - 60000 });
 const room6 = await newRoom(state6);
 ok('过期记录不被恢复', room6.moves.length === 0 && !state6._data.has('room'));
+
+// 12. 写入优化：闹钟节流（连下 20 手 setAlarm 只应有个位数次）+ 紧凑编码往返
+const state7 = new FakeState();
+let room7 = await newRoom(state7);
+await room7.fetch(req('?color=1'));
+await room7.fetch(req(''));
+const xA = state7._sockets[0], xB = state7._sockets[1];
+const cells = [[0, 0], [14, 14], [7, 7], [0, 14], [14, 0], [3, 5], [9, 2], [5, 11], [11, 8], [2, 2], [12, 12], [6, 6], [8, 8], [4, 4], [10, 10], [1, 7], [13, 7], [7, 1], [7, 13], [5, 5]];
+for (let i = 0; i < cells.length; i++) {
+  await room7.webSocketMessage(i % 2 === 0 ? xA : xB, JSON.stringify({ type: 'move', x: cells[i][0], y: cells[i][1] }));
+}
+ok('20 手全部落子', room7.moves.length === 20);
+ok('闹钟被节流（setAlarm ≤ 3 次）', state7.alarmSetCount <= 3, '实际 ' + state7.alarmSetCount + ' 次');
+const savedRec = state7._data.get('room');
+ok('棋谱以紧凑字符串存储', savedRec.v === 2 && typeof savedRec.m === 'string' && savedRec.m.length === 20);
+ok('紧凑记录体积显著小于 JSON 数组', JSON.stringify(savedRec).length < 260, JSON.stringify(savedRec).length + 'B');
+room7 = await newRoom(state7);
+ok('紧凑编码往返无损（含四角与 player 奇偶）',
+  room7.moves.length === 20 && room7.moves.every((m, i) => m.x === cells[i][0] && m.y === cells[i][1] && m.player === (i % 2 === 0 ? 1 : 2)));
+
+// 13. 旧格式（v1 JSON 数组）记录仍可恢复
+const state8 = new FakeState();
+state8._data.set('room', { moves: [{ x: 2, y: 3, player: 1 }, { x: 4, y: 5, player: 2 }], turn: 1, winner: 0, draw: false, creatorColor: 2, ts: Date.now() });
+const room8 = await newRoom(state8);
+ok('旧格式记录兼容恢复', room8.moves.length === 2 && room8.moves[1].x === 4 && room8.creatorColor === 2);
 
 console.log(`\n结果：${pass} 通过 / ${fail} 失败`);
 process.exit(fail ? 1 : 0);
