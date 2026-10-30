@@ -38,11 +38,11 @@ npm run deploy  # 部署到 Cloudflare Workers
 
 ## 结构
 
-- `src/index.js`：Worker 入口 + Durable Object 联机房间（`GameRoom`）。注意：入口模块只能导出 handler 与 DO 类——workerd 会拒绝字符串等其它类型的顶层导出并导致整个 Worker 启动失败，因此引擎与页面拆为独立模块由入口 import
+- `src/index.js`：Worker 入口 + Durable Object 联机房间（`GameRoom`，状态持久化、12 小时无人活动自动清理）。注意：入口模块只能导出 handler 与 DO 类——workerd 会拒绝字符串等其它类型的顶层导出并导致整个 Worker 启动失败，因此引擎与页面拆为独立模块由入口 import
 - `src/engine.js`：AI 引擎源码（`ENGINE_JS`）
 - `src/page.js`：前端页面（内嵌引擎与全部 UI 逻辑）
 - `tests/ai.test.mjs`：AI 引擎 Node 仿真测试（13 项）
 - `tests/ui.test.mjs`：UI 功能仿真（jsdom，15 项）
 - `tests/ws.test.mjs`：联机协议端到端测试（11 项；需先 `npx wrangler dev --port 8787 --local` 再 `npm run test:ws`）
-- `tests/room.test.mjs`：房间状态恢复测试（20 项；模拟 Durable Object 休眠重建后从 storage + 存活连接恢复会话与棋谱，防「后进者被误判为房主」）
+- `tests/room.test.mjs`：房间状态恢复与过期清理测试（26 项；模拟 Durable Object 休眠重建后从 storage + 存活连接恢复会话与棋谱，防「后进者被误判为房主」）
 - 推送到 `main` 后由 GitHub Actions 自动部署（`.github/workflows/deploy.yml`）

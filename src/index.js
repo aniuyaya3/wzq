@@ -15,6 +15,8 @@ import { HTML_PAGE } from './page.js';
 
 
 // ============ Durable Object：联机房间 ============
+const ROOM_TTL_MS = 12 * 60 * 60 * 1000; // 房间 12 小时无人活动自动清理
+
 export class GameRoom {
   constructor(state, env) {
     this.state = state;
@@ -24,6 +26,7 @@ export class GameRoom {
     this.winner = 0;
     this.draw = false;
     this.creatorColor = 1;
+    this.lastActive = 0;
     // 关键：房间对象会被 Cloudflare 休眠/回收后重建（WebSocket 连接与附件仍保留），
     // 若只靠内存变量，先进房的玩家会从 sessions 中消失，后进者被误判为房主。
     // 因此构造时从持久化存储 + 仍存活的连接恢复房间状态。
@@ -33,12 +36,16 @@ export class GameRoom {
   async restore() {
     try {
       const saved = await this.state.storage.get("room");
-      if (saved) {
+      if (saved && saved.ts && Date.now() - saved.ts > ROOM_TTL_MS) {
+        // 已过期（闹钟未触发的兜底）：直接丢弃旧房间
+        try { await this.state.storage.delete("room"); } catch {}
+      } else if (saved) {
         this.moves = Array.isArray(saved.moves) ? saved.moves : [];
         this.turn = saved.turn === 2 ? 2 : 1;
         this.winner = saved.winner || 0;
         this.draw = !!saved.draw;
         this.creatorColor = saved.creatorColor === 2 ? 2 : 1;
+        this.lastActive = saved.ts || 0;
       }
     } catch {}
     const seen = new Set();
@@ -54,12 +61,27 @@ export class GameRoom {
   }
 
   async persist() {
+    this.lastActive = Date.now();
     try {
       await this.state.storage.put("room", {
         moves: this.moves, turn: this.turn, winner: this.winner,
-        draw: this.draw, creatorColor: this.creatorColor,
+        draw: this.draw, creatorColor: this.creatorColor, ts: this.lastActive,
       });
+      // 每次活动都把清理闹钟顺延到 12 小时后
+      await this.state.storage.setAlarm(this.lastActive + ROOM_TTL_MS);
     } catch {}
+  }
+
+  async alarm() {
+    // 12 小时无人活动触发：房内还有人（连接存活）则再顺延 12 小时，无人则清理房间
+    if (this.state.getWebSockets().length > 0) {
+      try { await this.state.storage.setAlarm(Date.now() + ROOM_TTL_MS); } catch {}
+      return;
+    }
+    this.moves = []; this.turn = 1; this.winner = 0; this.draw = false;
+    this.creatorColor = 1; this.sessions = []; this.lastActive = 0;
+    try { await this.state.storage.delete("room"); } catch {}
+    try { await this.state.storage.deleteAlarm(); } catch {}
   }
 
   board() {

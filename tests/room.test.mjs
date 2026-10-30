@@ -26,8 +26,17 @@ class FakeState {
   constructor() {
     this._data = new Map();
     this._sockets = [];
+    this._alarm = null;
     const data = this._data;
-    this.storage = { async get(k) { return data.get(k); }, async put(k, v) { data.set(k, v); } };
+    const self = this;
+    this.storage = {
+      async get(k) { return data.get(k); },
+      async put(k, v) { data.set(k, v); },
+      async delete(k) { data.delete(k); },
+      async setAlarm(t) { self._alarm = t; },
+      async getAlarm() { return self._alarm; },
+      async deleteAlarm() { self._alarm = null; },
+    };
   }
   acceptWebSocket(ws) { this._sockets.push(ws); }
   getWebSockets() { return this._sockets.filter((s) => !s.closed); }
@@ -110,6 +119,30 @@ vB.close();
 await room4.webSocketClose(vB);
 ok('重建后断线仍通知对方', vA.types().filter((t) => t === 'leave').length === 1);
 ok('断线后会话摘除', room4.sessions.length === 1);
+
+// 10. 过期清理：活动后闹钟设在约 12 小时后；无人时 alarm 清空房间；有人时顺延
+const H12 = 12 * 60 * 60 * 1000;
+const state5 = new FakeState();
+let room5 = await newRoom(state5);
+await room5.fetch(req('?color=1'));
+await room5.fetch(req(''));
+const wA = state5._sockets[0], wB = state5._sockets[1];
+await room5.webSocketMessage(wA, JSON.stringify({ type: 'move', x: 3, y: 3 }));
+ok('活动后闹钟约在 12 小时后', typeof state5._alarm === 'number' && Math.abs(state5._alarm - (Date.now() + H12)) < 10000, String(state5._alarm));
+await room5.alarm(); // 房内还有连接时不应清理
+ok('有人在房内时 alarm 不清理', room5.moves.length === 1 && state5._data.has('room'));
+ok('有人在时闹钟顺延', Math.abs(state5._alarm - (Date.now() + H12)) < 10000);
+wA.close(); wB.close();
+await room5.alarm();
+ok('无人时 alarm 删除房间记录', !state5._data.has('room'));
+room5 = await newRoom(state5);
+ok('清理后重建为空房间', room5.moves.length === 0 && room5.winner === 0);
+
+// 11. restore 兜底：记录已过期（>12h）时不加载旧棋谱
+const state6 = new FakeState();
+state6._data.set('room', { moves: [{ x: 1, y: 1, player: 1 }], turn: 2, winner: 0, draw: false, creatorColor: 1, ts: Date.now() - H12 - 60000 });
+const room6 = await newRoom(state6);
+ok('过期记录不被恢复', room6.moves.length === 0 && !state6._data.has('room'));
 
 console.log(`\n结果：${pass} 通过 / ${fail} 失败`);
 process.exit(fail ? 1 : 0);
