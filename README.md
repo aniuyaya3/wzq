@@ -6,7 +6,7 @@
 
 - **人机对战**：4 档难度（简单 / 普通 / 困难 / 大师），可选执黑（先行）或执白
 - **双人对战**：同一台设备轮流落子
-- **在线对战**：创建房间把房间号发给朋友，对方输入即可加入；支持悔棋 / 重开 / 和棋协商与认输
+- **在线对战**：创建房间把房间号发给朋友，对方输入即可加入；开局随机决定黑白（1.5 秒揭晓，服务端拦截提前落子），之后每局轮换先手；支持悔棋 / 重开 / 和棋协商与认输
 - 规则：15×15 棋盘，黑棋先行，横 / 竖 / 斜任意连成五子获胜，无禁手
 - 附带：落子提示、棋谱记录、对局计时、音效与震动、人机战绩统计（本机保存）
 
@@ -43,7 +43,7 @@ npm run deploy  # 部署到 Cloudflare Workers
 - `src/page.js`：前端页面（内嵌引擎与全部 UI 逻辑）
 - `tests/ai.test.mjs`：AI 引擎 Node 仿真测试（13 项）
 - `tests/ui.test.mjs`：UI 功能仿真（jsdom，15 项）
-- `tests/ws.test.mjs`：联机协议端到端测试（11 项；需先 `npx wrangler dev --port 8787 --local` 再 `npm run test:ws`）
-- `tests/room.test.mjs`：房间状态恢复与过期清理测试（32 项；模拟 Durable Object 休眠重建后从 storage + 存活连接恢复会话与棋谱，防「后进者被误判为房主」；含闹钟节流与棋谱紧凑编码往返）
+- `tests/ws.test.mjs`：联机协议端到端测试（14 项；需先 `npx wrangler dev --port 8787 --local` 再 `npm run test:ws`）
+- `tests/room.test.mjs`：房间状态恢复与过期清理测试（38 项；模拟 Durable Object 休眠重建后从 storage + 存活连接恢复会话与棋谱，防「后进者被误判为房主」；含随机抽签/轮换先手、揭晓前拦截、闹钟节流与棋谱紧凑编码往返、旧格式/旧连接兼容）
 - `tests/load.mjs`：多房间对战压测（机器人互打，统计手数/局数/错误，用于推演额度消耗）
 - 推送到 `main` 后由 GitHub Actions 自动部署（`.github/workflows/deploy.yml`）

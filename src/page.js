@@ -145,13 +145,7 @@ export const HTML_PAGE = `<!DOCTYPE html>
     </div>
 
     <div class="card setup" id="setup-online">
-      <div>
-        <div class="lbl">创建房间时你的棋子</div>
-        <div class="seg" id="olColorSeg">
-          <button data-color="1" class="active">⚫ 执黑</button>
-          <button data-color="2">⚪ 执白</button>
-        </div>
-      </div>
+      <p class="tip">开局由系统随机决定谁执黑（约 1.5 秒揭晓），之后每局轮换先手。</p>
       <button class="primary" id="createRoomBtn">创建房间</button>
       <div>
         <div class="lbl">或输入房间号加入</div>
@@ -229,7 +223,7 @@ var soundOn = loadJSON('gomoku-sound', true);
 // ---------- 状态 ----------
 var mode = null;               // 'ai' | 'local' | 'online'
 var board = null, moves = [], turn = 1, gameOver = false, resultCounted = false;
-var myColor = 1, aiColor = 2, difficulty = 'normal', pickColorVal = 1, olColorVal = 1;
+var myColor = 1, aiColor = 2, difficulty = 'normal', pickColorVal = 1, drawUntil = 0;
 var ws = null, roomId = null, thinking = false, startTime = 0, timerId = null;
 var hoverCell = null, previewCell = null, hintCell = null, hintTimer = null;
 var winCells = [];
@@ -334,9 +328,9 @@ function refreshChips() {
   var names;
   if (mode === 'ai') names = myColor === 1 ? ['你', 'AI'] : ['AI', '你'];
   else if (mode === 'local') names = ['玩家一', '玩家二'];
-  else names = myColor === 1 ? ['你', '对手'] : ['对手', '你'];
+  else names = myColor === 1 ? ['你', '对手'] : (myColor === 2 ? ['对手', '你'] : ['待抽签', '待抽签']);
   $('who1').textContent = names[0] + ' · 黑'; $('who2').textContent = names[1] + ' · 白';
-  $('sub1').textContent = mode === 'ai' && myColor !== 1 ? diffName() : (mode === 'online' && myColor !== 1 ? '房主/对手' : '');
+  $('sub1').textContent = mode === 'ai' && myColor !== 1 ? diffName() : '';
   $('sub2').textContent = mode === 'ai' && myColor === 1 ? diffName() : '';
   $('diffWrap').style.display = mode === 'ai' ? '' : 'none';
 }
@@ -488,7 +482,7 @@ function showHome() {
   stopTimer(); renderStats();
 }
 function resetGame() {
-  board = emptyBoard(); moves = []; turn = 1; gameOver = false; resultCounted = false;
+  board = emptyBoard(); moves = []; turn = 1; gameOver = false; resultCounted = false; drawUntil = 0;
   winCells = []; hoverCell = null; previewCell = null; hintCell = null; thinking = false;
   startTime = Date.now();
   stopTimer(); timerId = setInterval(refreshMeta, 1000);
@@ -519,6 +513,7 @@ function currentDiff() {
 function canHumanPlay() {
   if (gameOver || thinking || !board) return false;
   if (mode === 'local') return true;
+  if (mode === 'online' && Date.now() < drawUntil) return false; // 等待开局揭晓
   return turn === myColor;
 }
 
@@ -747,7 +742,6 @@ function segWire(id, attr, cb) {
 }
 segWire('diffSeg', 'data-diff', function (v) { difficulty = v; });
 segWire('colorSeg', 'data-color', function (v) { pickColorVal = parseInt(v, 10); });
-segWire('olColorSeg', 'data-color', function (v) { olColorVal = parseInt(v, 10); });
 $('startAiBtn').onclick = startAI;
 $('startLocalBtn').onclick = startLocal;
 $('soundBtn').onclick = function () {
@@ -758,11 +752,10 @@ $('soundBtn').onclick = function () {
 $('soundBtn').textContent = soundOn ? '🔊' : '🔇';
 
 // ---------- 联机 ----------
-function connectOnline(id, isCreator) {
+function connectOnline(id) {
   mode = 'online'; roomId = id;
   var proto = location.protocol === 'https:' ? 'wss' : 'ws';
-  var q = isCreator ? ('?color=' + olColorVal) : '';
-  ws = new WebSocket(proto + '://' + location.host + '/room/' + id + '/ws' + q);
+  ws = new WebSocket(proto + '://' + location.host + '/room/' + id + '/ws');
   showGame(); resetGame();
   $('roomBar').classList.add('show');
   $('roomCode').textContent = id;
@@ -771,12 +764,38 @@ function connectOnline(id, isCreator) {
   ws.onmessage = function (ev) {
     var msg; try { msg = JSON.parse(ev.data); } catch (e) { return; }
     if (msg.type === 'welcome') {
-      myColor = msg.player;
+      myColor = msg.color || 0;
       if (msg.moves && msg.moves.length) rebuildFromMoves(msg.moves);
       refreshChips();
     }
-    if (msg.type === 'waiting') setStatus('等待对手加入 · 房间号 ' + roomId);
-    if (msg.type === 'start') { turn = msg.turn; refreshChips(); setStatus(myColor === 1 ? '对局开始 · 你执黑先行' : '对局开始 · 对方先行'); toast('对手已加入，对局开始'); }
+    if (msg.type === 'waiting') setStatus('等待对手加入 · 房间号 ' + roomId + '（开局随机决定黑白）');
+    if (msg.type === 'start') {
+      myColor = msg.color;
+      if (msg.resume) { // 断线重回：恢复对局，不重置棋盘
+        gameOver = false; drawUntil = 0;
+        refreshChips(); setStatus('对手已回到房间，继续对局'); turnStatus(); draw();
+      } else {
+        resetGame();
+        myColor = msg.color;
+        drawUntil = msg.startAt || 0;
+        refreshChips(); draw();
+        var wait = Math.max(0, drawUntil - Date.now());
+        if (wait > 0) {
+          setStatus(msg.first ? '🎲 正在随机决定先手…' : '🔀 本局轮换先手，准备中…');
+          setTimeout(function () {
+            if (mode !== 'online' || gameOver) return;
+            refreshChips();
+            setStatus(myColor === 1 ? '对局开始 · 你执黑先行' : '对局开始 · 对方执黑先行');
+            toast(msg.first
+              ? (myColor === 1 ? '抽签结果：你执黑先行' : '抽签结果：对方执黑先行')
+              : (myColor === 1 ? '本局轮到你执黑先行' : '本局对方执黑先行'));
+            draw();
+          }, wait + 30);
+        } else {
+          setStatus(myColor === 1 ? '对局开始 · 你执黑先行' : '对局开始 · 对方执黑先行');
+        }
+      }
+    }
     if (msg.type === 'move') {
       if (board[msg.y][msg.x] === 0) applyMove(msg.x, msg.y, msg.player);
       if (msg.winner) gameOver = true;
@@ -786,7 +805,6 @@ function connectOnline(id, isCreator) {
       rebuildFromMoves(msg.moves);
       gameOver = false; winCells = [];
       if (msg.note === 'undo') { setStatus('悔棋成功'); toast('悔棋成功'); }
-      if (msg.note === 'restart') { startTime = Date.now(); setStatus('新对局开始'); turnStatus(); }
       draw();
     }
     if (msg.type === 'gameover') {
@@ -830,12 +848,12 @@ function rebuildFromMoves(mvs) {
 $('createRoomBtn').onclick = function () {
   var chars = 'abcdefghjkmnpqrstuvwxyz23456789', id = '';
   for (var i = 0; i < 6; i++) id += chars.charAt(Math.floor(Math.random() * chars.length));
-  connectOnline(id, true);
+  connectOnline(id);
 };
 $('joinRoomBtn').onclick = function () {
   var id = $('roomInput').value.trim().toLowerCase();
   if (id.length < 4) return toast('请输入至少 4 位房间号');
-  connectOnline(id, false);
+  connectOnline(id);
 };
 $('copyRoomBtn').onclick = function () {
   var code = roomId || '';

@@ -33,7 +33,7 @@ class Bot {
     this.board = []; this.moves = 0; this.thinking = false; this.dead = false;
   }
   connect() {
-    const url = `${BASE}/room/${this.room}/ws${this.wantColor ? '?color=' + this.wantColor : ''}`;
+    const url = `${BASE}/room/${this.room}/ws`;
     this.ws = new WebSocket(url);
     this.ws.onmessage = (ev) => { stats.received++; this.onMsg(JSON.parse(ev.data)); };
     this.ws.onclose = () => {
@@ -53,18 +53,23 @@ class Bot {
   act() {
     if (this.over || this.thinking || !this.my || this.turnNow() !== this.my || Date.now() > deadline) return;
     this.thinking = true;
+    const wait = Math.max(rand(DELAY_MIN, DELAY_MAX), (this.startAt || 0) - Date.now() + 30);
     setTimeout(() => {
       this.thinking = false;
       if (this.over || !this.my || this.turnNow() !== this.my || Date.now() > deadline) return;
       const mv = pickMove(this.board, 15);
       if (this.board[mv.y][mv.x]) return;
       this.send({ type: 'move', x: mv.x, y: mv.y });
-    }, rand(DELAY_MIN, DELAY_MAX));
+    }, wait);
   }
   onMsg(m) {
     switch (m.type) {
-      case 'welcome': this.my = m.player; this.rebuild(m.moves); this.over = false; break;
-      case 'start': this.over = false; this.act(); break;
+      case 'welcome': this.my = m.color || 0; this.rebuild(m.moves); this.over = false; break;
+      case 'start':
+        this.my = m.color; this.startAt = m.startAt || 0;
+        if (!m.resume) this.rebuild([]);
+        this.over = false; this.act();
+        break;
       case 'move':
         this.board[m.y][m.x] = m.player; this.moves++; stats.moves++;
         if (m.winner || m.draw) { this.over = true; stats.games++; if (m.draw) stats.draws++; this.afterGame(); }
