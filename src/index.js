@@ -24,6 +24,42 @@ export class GameRoom {
     this.winner = 0;
     this.draw = false;
     this.creatorColor = 1;
+    // 关键：房间对象会被 Cloudflare 休眠/回收后重建（WebSocket 连接与附件仍保留），
+    // 若只靠内存变量，先进房的玩家会从 sessions 中消失，后进者被误判为房主。
+    // 因此构造时从持久化存储 + 仍存活的连接恢复房间状态。
+    state.blockConcurrencyWhile(async () => { await this.restore(); });
+  }
+
+  async restore() {
+    try {
+      const saved = await this.state.storage.get("room");
+      if (saved) {
+        this.moves = Array.isArray(saved.moves) ? saved.moves : [];
+        this.turn = saved.turn === 2 ? 2 : 1;
+        this.winner = saved.winner || 0;
+        this.draw = !!saved.draw;
+        this.creatorColor = saved.creatorColor === 2 ? 2 : 1;
+      }
+    } catch {}
+    const seen = new Set();
+    this.sessions = [];
+    for (const ws of this.state.getWebSockets()) {
+      let p = 0;
+      try { p = (ws.deserializeAttachment() || {}).player; } catch {}
+      if ((p === 1 || p === 2) && !seen.has(p) && this.sessions.length < 2) {
+        seen.add(p);
+        this.sessions.push({ socket: ws, player: p });
+      }
+    }
+  }
+
+  async persist() {
+    try {
+      await this.state.storage.put("room", {
+        moves: this.moves, turn: this.turn, winner: this.winner,
+        draw: this.draw, creatorColor: this.creatorColor,
+      });
+    } catch {}
   }
 
   board() {
@@ -47,6 +83,7 @@ export class GameRoom {
       }
       this.sessions.push({ socket: pair[1], player });
       pair[1].serializeAttachment({ player });
+      await this.persist();
       this.sendTo(pair[1], { type: "welcome", player, moves: this.moves, turn: this.turn });
       if (this.sessions.length === 2) this.broadcast({ type: "start", turn: this.turn });
       else this.sendTo(pair[1], { type: "waiting" });
@@ -57,7 +94,7 @@ export class GameRoom {
 
   opponentOf(player) { return this.sessions.find(s => s.player !== player); }
 
-  webSocketMessage(ws, message) {
+  async webSocketMessage(ws, message) {
     let data;
     try { data = JSON.parse(message); } catch { return; }
     const att = ws.deserializeAttachment() || {};
@@ -75,6 +112,7 @@ export class GameRoom {
         const winner = this.checkWin(x, y, player);
         if (winner) this.winner = winner;
         else if (this.moves.length === 225) this.draw = true;
+        await this.persist();
         this.broadcast({ type: "move", x, y, player, turn: this.turn, winner: this.winner, draw: this.draw });
         break;
       }
@@ -88,6 +126,7 @@ export class GameRoom {
           if (last.player === requester.player) break;
         }
         this.winner = 0; this.draw = false;
+        await this.persist();
         this.broadcast({ type: "sync", moves: this.moves, turn: this.turn, winner: 0, note: "undo" });
         break;
       }
@@ -99,6 +138,7 @@ export class GameRoom {
       case "restart_req": if (opponent) this.sendTo(opponent.socket, { type: "restart_req" }); break;
       case "restart_ack": {
         this.moves = []; this.turn = 1; this.winner = 0; this.draw = false;
+        await this.persist();
         this.broadcast({ type: "sync", moves: [], turn: 1, winner: 0, note: "restart" });
         break;
       }
@@ -109,12 +149,14 @@ export class GameRoom {
       }
       case "resign": {
         this.winner = player === 1 ? 2 : 1;
+        await this.persist();
         this.broadcast({ type: "gameover", winner: this.winner, reason: "resign", loser: player });
         break;
       }
       case "draw_req": if (opponent) this.sendTo(opponent.socket, { type: "draw_req" }); break;
       case "draw_ack": {
         this.draw = true;
+        await this.persist();
         this.broadcast({ type: "gameover", winner: 0, reason: "draw" });
         break;
       }

@@ -44,4 +44,5 @@ npm run deploy  # 部署到 Cloudflare Workers
 - `tests/ai.test.mjs`：AI 引擎 Node 仿真测试（13 项）
 - `tests/ui.test.mjs`：UI 功能仿真（jsdom，15 项）
 - `tests/ws.test.mjs`：联机协议端到端测试（10 项；需先 `npx wrangler dev --port 8787 --local` 再 `npm run test:ws`）
+- `tests/room.test.mjs`：房间状态恢复测试（15 项；模拟 Durable Object 休眠重建后从 storage + 存活连接恢复会话与棋谱，防「后进者被误判为房主」）
 - 推送到 `main` 后由 GitHub Actions 自动部署（`.github/workflows/deploy.yml`）
