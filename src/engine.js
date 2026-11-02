@@ -584,6 +584,38 @@ var GomokuAI = (function () {
     buildEvalInc(b, st);
   }
 
+
+  // —— 双活三识别（根节点攻防校验用）：一手在两个方向同成活三（连三且两端开放）
+  function clsIdxF(b, idx, p) {
+    var x = idx % N, y = (idx / N) | 0, live3 = 0, four = 0;
+    var DIRS4 = [[1, 0], [0, 1], [1, 1], [1, -1]];
+    for (var d = 0; d < 4; d++) {
+      var dx = DIRS4[d][0], dy = DIRS4[d][1], count = 1, open = 0;
+      for (var s = 1; s >= -1; s -= 2) {
+        var cx = x + dx * s, cy = y + dy * s;
+        while (cx >= 0 && cx < N && cy >= 0 && cy < N && b[cy * N + cx] === p) { count++; cx += dx * s; cy += dy * s; }
+        if (cx >= 0 && cx < N && cy >= 0 && cy < N && b[cy * N + cx] === 0) open++;
+      }
+      if (count >= 5) return { five: true, live3: live3, four: four };
+      if (count === 4 && open >= 1) four++;
+      else if (count === 3 && open === 2) live3++;
+    }
+    return { five: false, live3: live3, four: four };
+  }
+  // p 的全部双活三手（临时落子判型、随即复原，不走 st 记账——仅供根节点校验读盘）
+  function d3MovesF(b, p) {
+    var out = [];
+    for (var i = 0; i < CELLS; i++) {
+      if (b[i] !== 0) continue;
+      var x = i % N, y = (i / N) | 0, nearS = false;
+      for (var oy = -2; oy <= 2 && !nearS; oy++) for (var ox = -2; ox <= 2; ox++) { var nx = x + ox, ny = y + oy; if (nx >= 0 && nx < N && ny >= 0 && ny < N && b[ny * N + nx] !== 0) { nearS = true; break; } }
+      if (!nearS) continue;
+      b[i] = p; var c = clsIdxF(b, i, p); b[i] = 0;
+      if (!c.five && c.live3 >= 2) out.push(i);
+    }
+    return out;
+  }
+
   function searchRoot(board2d, aiColor, levelName) {
     var cfg = LEVELS[levelName] || LEVELS.normal;
     var opp = aiColor === 1 ? 2 : 1;
@@ -602,12 +634,14 @@ var GomokuAI = (function () {
     var st = { nodes: 0, deadline: t0 + cfg.time, aborted: false, tt: TT_PERSIST, hash: hashBoard(b), cfg: cfg, near: buildNear(b), killers: [], history: [null, new Int32Array(CELLS), new Int32Array(CELLS)], rootFilter: null, prevBest: -1, vcfNodes: 0, vcfDeadline: 0, dir: { 1: buildDirArrays(b, 1, newDirSet()), 2: buildDirArrays(b, 2, newDirSet()) } };
     buildEvalInc(b, st);
     var bSnap = b.slice();
+    var oppVcfFound = false;
     // VCF 先行（仅大师）：有连续冲四必胜直接兑现，不必等常规搜索慢慢推
     if (cfg.vcf) {
       var vcfWin = vcfSolve(b, st, aiColor, opp, 10, 200);
       if (vcfWin >= 0) return { x: vcfWin % N, y: (vcfWin / N) | 0, score: WIN_SCORE - 20, depth: 0, nodes: st.nodes, ms: Date.now() - t0, vcf: 1 };
       // 对方有 VCF 时预先算安全着法集合供根节点过滤（我落子只会削弱对方 VCF，判据单调、安全）
       var oppVcf = vcfSolve(b, st, opp, aiColor, 10, 200);
+      if (oppVcf >= 0) oppVcfFound = true;
       if (oppVcf >= 0) {
         var pool = genCandidates(b, aiColor, opp, cfg.width + 4, cfg.defWeight, st.near, st.dir);
         var seenIdx = {}, pi, exIdx;
@@ -665,6 +699,35 @@ var GomokuAI = (function () {
     if (!best) { // 兜底：贪心一手
       var c = genCandidates(b, aiColor, opp, 1, cfg.defWeight, st.near, st.dir)[0];
       best = { idx: c.idx, score: 0 };
+    }
+    // 双活三攻防校验（仅大师）：普通搜索对「下一步成双活三」定价不足，根节点用精确判据兜底。
+    // 抢攻优先：我能先成双活三且对方无即时四/五点/VCF 威胁时直接成形（同成双活三先成者胜一 tempo）；
+    // 否则若对方有成双活三手而搜索手未防住（且不是造四反制），改选已验证的防法。
+    if (cfg.vcf && best) { // 不设分数门：搜索的大胜宣称常来自组合棋型评估膨胀（把自家四三/双四当必胜），恰是本校验要纠的误判；是否收手只看落子本身的棋型（成五/组合/造四反制已在下面判）
+      var bi = best.idx;
+      b[bi] = aiColor; var mc = clsIdxF(b, bi, aiColor); b[bi] = 0;
+      var myCombo = mc.five || mc.live3 >= 2 || (mc.four >= 1 && mc.live3 >= 1) || mc.four >= 2;
+      if (!myCombo) {
+        var raced = false;
+        var myD3 = d3MovesF(b, aiColor);
+        if (myD3.length && !oppVcfFound && !exactWinPoints(b, opp, st.near).length && !fourMoves(b, st, opp).length) {
+          var bp = -1, bs = -1;
+          for (var gi = 0; gi < myD3.length; gi++) { var gx = myD3[gi] % N, gy = (myD3[gi] / N) | 0; var gs = pointScore(b, gx, gy, aiColor) + pointScore(b, gx, gy, opp); if (gs > bs) { bs = gs; bp = myD3[gi]; } }
+          if (bp >= 0) { best = { idx: bp, score: best.score }; raced = true; }
+        }
+        if (!raced && mc.four === 0 && d3MovesF(b, opp).length) {
+          b[bi] = aiColor; var stillD3 = d3MovesF(b, opp); b[bi] = 0;
+          if (stillD3.length) {
+            var pp = -1, ps = -1;
+            for (var ci = 0; ci < CELLS; ci++) {
+              if (b[ci] !== 0 || !st.near[ci]) continue;
+              b[ci] = aiColor; var leftD3 = d3MovesF(b, opp); b[ci] = 0;
+              if (!leftD3.length) { var cx2 = ci % N, cy2 = (ci / N) | 0; var cs2 = pointScore(b, cx2, cy2, aiColor) + pointScore(b, cx2, cy2, opp); if (cs2 > ps) { ps = cs2; pp = ci; } }
+            }
+            if (pp >= 0) best = { idx: pp, score: best.score };
+          }
+        }
+      }
     }
     var result = { x: best.idx % N, y: (best.idx / N) | 0, score: best.score, depth: reachedDepth, nodes: st.nodes, ms: Date.now() - t0 };
     // 简单难度：概率性次优着法（像真人失误，但不送成五的命）
