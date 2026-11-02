@@ -1,0 +1,290 @@
+[
+ {
+  "name": "def-diag-diag-1",
+  "type": "defense",
+  "attack": 1,
+  "black": [
+   "D13",
+   "J13",
+   "E12",
+   "I12",
+   "A11",
+   "L1"
+  ],
+  "white": [
+   "M15",
+   "F6",
+   "H4"
+  ]
+ },
+ {
+  "name": "def-row-diag-0",
+  "type": "defense",
+  "attack": 2,
+  "black": [
+   "B14",
+   "N10",
+   "J2"
+  ],
+  "white": [
+   "F14",
+   "G9",
+   "J9",
+   "G8",
+   "I8",
+   "K8"
+  ]
+ },
+ {
+  "name": "def-row-diag-2",
+  "type": "defense",
+  "attack": 2,
+  "black": [
+   "C15",
+   "G12",
+   "J12"
+  ],
+  "white": [
+   "D13",
+   "E9",
+   "H9",
+   "F8",
+   "H8",
+   "L1"
+  ]
+ },
+ {
+  "name": "def-row-col-0",
+  "type": "defense",
+  "attack": 2,
+  "black": [
+   "F15",
+   "K13",
+   "F7"
+  ],
+  "white": [
+   "M15",
+   "F11",
+   "G11",
+   "L11",
+   "D9",
+   "D8"
+  ]
+ },
+ {
+  "name": "def-row-col-1",
+  "type": "defense",
+  "attack": 1,
+  "black": [
+   "N10",
+   "F7",
+   "G7",
+   "N7",
+   "I5",
+   "I4"
+  ],
+  "white": [
+   "A14",
+   "G11",
+   "I2"
+  ]
+ },
+ {
+  "name": "def-rowlive-diag-1",
+  "type": "defense",
+  "attack": 1,
+  "black": [
+   "A15",
+   "J6",
+   "H5",
+   "J5",
+   "C4",
+   "G4"
+  ],
+  "white": [
+   "G15",
+   "B11",
+   "F8"
+  ]
+ },
+ {
+  "name": "def-rowlive-diag-2",
+  "type": "defense",
+  "attack": 2,
+  "black": [
+   "K14",
+   "L11",
+   "M9"
+  ],
+  "white": [
+   "N14",
+   "O8",
+   "E6",
+   "C5",
+   "E5",
+   "B4"
+  ]
+ },
+ {
+  "name": "def-manual-real-w",
+  "type": "defense",
+  "attack": 2,
+  "black": [
+   "M3",
+   "M4",
+   "L3"
+  ],
+  "white": [
+   "E12",
+   "F13",
+   "E8",
+   "F7",
+   "B3",
+   "C3"
+  ]
+ },
+ {
+  "name": "def-manual-real-b",
+  "type": "defense",
+  "attack": 1,
+  "black": [
+   "E12",
+   "F13",
+   "E8",
+   "F7",
+   "B3",
+   "C3"
+  ],
+  "white": [
+   "M3",
+   "M4",
+   "L3"
+  ]
+ },
+ {
+  "name": "def-manual-mirror",
+  "type": "defense",
+  "attack": 2,
+  "black": [
+   "M3",
+   "M4",
+   "L3"
+  ],
+  "white": [
+   "K12",
+   "J13",
+   "M8",
+   "M7",
+   "B3",
+   "C3"
+  ]
+ },
+ {
+  "name": "off-diag-diag-1",
+  "type": "offense",
+  "attack": 1,
+  "black": [
+   "D13",
+   "J13",
+   "E12",
+   "I12",
+   "A11",
+   "L1"
+  ],
+  "white": [
+   "M15",
+   "F6",
+   "H4"
+  ]
+ },
+ {
+  "name": "off-row-diag-0",
+  "type": "offense",
+  "attack": 2,
+  "black": [
+   "B14",
+   "N10",
+   "J2"
+  ],
+  "white": [
+   "F14",
+   "G9",
+   "J9",
+   "G8",
+   "I8",
+   "K8"
+  ]
+ },
+ {
+  "name": "off-row-diag-2",
+  "type": "offense",
+  "attack": 2,
+  "black": [
+   "C15",
+   "G12",
+   "J12"
+  ],
+  "white": [
+   "D13",
+   "E9",
+   "H9",
+   "F8",
+   "H8",
+   "L1"
+  ]
+ },
+ {
+  "name": "off-row-col-0",
+  "type": "offense",
+  "attack": 2,
+  "black": [
+   "F15",
+   "K13",
+   "F7"
+  ],
+  "white": [
+   "M15",
+   "F11",
+   "G11",
+   "L11",
+   "D9",
+   "D8"
+  ]
+ },
+ {
+  "name": "race-both",
+  "type": "race",
+  "attack": 2,
+  "black": [
+   "M11",
+   "N11",
+   "K9",
+   "K8"
+  ],
+  "white": [
+   "F7",
+   "G8",
+   "F3",
+   "G2"
+  ],
+  "create": "D5"
+ },
+ {
+  "name": "counter-four",
+  "type": "counter",
+  "attack": 2,
+  "black": [
+   "F4",
+   "G4",
+   "H4"
+  ],
+  "white": [
+   "E12",
+   "F13",
+   "E8",
+   "F7",
+   "E4"
+  ],
+  "four": "I4"
+ }
+]

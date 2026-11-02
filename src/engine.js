@@ -616,6 +616,81 @@ var GomokuAI = (function () {
     return out;
   }
 
+  // p 的全部「活四点」明细：落子后产生 ≥2 个成五点的空点（落子即成活四/双四，一手堵不完）。
+  // 每点附带其所成四的线键（方向+线号），供造点判据区分「同线两端」与「双线齐发」。
+  function live4DetailF(b, p) {
+    var out = [];
+    var DIRS4 = [[1, 0], [0, 1], [1, 1], [1, -1]];
+    for (var i = 0; i < CELLS; i++) {
+      if (b[i] !== 0) continue;
+      var x = i % N, y = (i / N) | 0, nearS = false;
+      for (var oy = -2; oy <= 2 && !nearS; oy++) for (var ox = -2; ox <= 2; ox++) { var nx = x + ox, ny = y + oy; if (nx >= 0 && nx < N && ny >= 0 && ny < N && b[ny * N + nx] !== 0) { nearS = true; break; } }
+      if (!nearS) continue;
+      b[i] = p;
+      var w = winPointsThrough(b, i, p);
+      if (w.length >= 2) {
+        var keys = {}, keyList = [];
+        for (var d = 0; d < 4; d++) {
+          var dx = DIRS4[d][0], dy = DIRS4[d][1];
+          // 经 i 且含 4 子 p 的 5 格窗（窗内第 5 格即成五点之一）：窗的方向与线号即线键
+          for (var off = -4; off <= 0; off++) {
+            var own = 0, bad = false;
+            for (var k = 0; k < 5; k++) {
+              var cx = x + (off + k) * dx, cy = y + (off + k) * dy;
+              if (cx < 0 || cx >= N || cy < 0 || cy >= N) { bad = true; break; }
+              var cv = b[cy * N + cx];
+              if (cv === p) own++; else if (cv !== 0) { bad = true; break; }
+            }
+            if (!bad && own === 4) {
+              var lineId = d === 0 ? y : d === 1 ? x : d === 2 ? (y - x) : (x + y);
+              var key = d + ':' + lineId;
+              if (!keys[key]) { keys[key] = 1; keyList.push(key); }
+            }
+          }
+        }
+        out.push({ idx: i, keys: keyList });
+      }
+      b[i] = 0;
+    }
+    return out;
+  }
+  function live4PointsF(b, p) {
+    return live4DetailF(b, p).map(function (e) { return e.idx; });
+  }
+  // p 的全部「造双线四点」着法：落子后 p 新增的活四点 ≥2 个、且分布在 ≥2 条不同的线上。
+  // 此类一手造出双线活四成形点，对方一手只能堵一条线、次手必成活四——与双活三同级的必杀结构；
+  // 造点手本身常是断点三/活三等安静着法（实战 C10 型），VCF（只认以四开局）与搜索定价都够不着。
+  // 同线两端（单个活三的两端点）不算：堵一端即降格为冲四，属搜索可处理范围。
+  function crtMovesF(b, p) {
+    var out = [];
+    for (var i = 0; i < CELLS; i++) {
+      if (b[i] !== 0) continue;
+      // 预筛：造点手必在某个 5 格窗内与 ≥2 颗 p 子同窗且窗内无异子（它至少补成一个三）
+      var ws = CELL_WINDOWS[i], three = false;
+      for (var wi = 0; wi < ws.length && !three; wi++) {
+        var cells = WINDOWS[ws[wi]], own = 0, bad = false;
+        for (var k = 0; k < 5; k++) { var cv = b[cells[k]]; if (cv === p) own++; else if (cv !== 0) { bad = true; break; } }
+        if (!bad && own >= 2) three = true;
+      }
+      if (!three) continue;
+      b[i] = p;
+      var det = live4DetailF(b, p), hit = false;
+      if (det.length >= 2) {
+        var seenKeys = {};
+        for (var a = 0; a < det.length && !hit; a++) for (var q = 0; q < det[a].keys.length; q++) {
+          var key2 = det[a].keys[q];
+          if (seenKeys[key2]) continue;
+          // 已有点占了另一条线 → 双线齐发成立
+          for (var prev in seenKeys) { if (prev !== key2) { hit = true; break; } }
+          seenKeys[key2] = 1;
+        }
+      }
+      b[i] = 0;
+      if (hit) out.push(i);
+    }
+    return out;
+  }
+
   function searchRoot(board2d, aiColor, levelName) {
     var cfg = LEVELS[levelName] || LEVELS.normal;
     var opp = aiColor === 1 ? 2 : 1;
@@ -725,6 +800,62 @@ var GomokuAI = (function () {
               if (!leftD3.length) { var cx2 = ci % N, cy2 = (ci / N) | 0; var cs2 = pointScore(b, cx2, cy2, aiColor) + pointScore(b, cx2, cy2, opp); if (cs2 > ps) { ps = cs2; pp = ci; } }
             }
             if (pp >= 0) best = { idx: pp, score: best.score };
+          }
+        }
+      }
+    }
+    // 造双线四点攻防校验（仅大师，随 cfg.vcf）：一手造出分布在两条线上的活四点后，对方一手堵不完、
+    // 次手必成活四，是与双活三同级的必杀结构；但造点手常为断点三等安静着法，VCF（只认以四开局）
+    // 与搜索定价都够不着（实战第 40 手 C10 型）。判据只认窗口棋型、不看搜索分数。
+    // 适用范围：对方当前尚无活四点（已有活四点属搜索/强制着法的领域）；同线两端不触发本校验。
+    if (cfg.vcf && best) {
+      var bi2 = best.idx;
+      b[bi2] = aiColor; var mc2 = clsIdxF(b, bi2, aiColor); var myWp = winPointsThrough(b, bi2, aiColor); b[bi2] = 0;
+      if (!mc2.five && !live4DetailF(b, opp).length) {
+        var oppCrt = crtMovesF(b, opp);
+        if (oppCrt.length) {
+          var myCrt = crtMovesF(b, aiColor);
+          var bestIsMine = myCrt.indexOf(bi2) >= 0;
+          // 抢造：我有造点手且对方无即时五点/VCF 威胁时先造（先造者胜一 tempo，同双活三抢攻）
+          if (!bestIsMine && myCrt.length && mc2.four === 0 && myWp.length === 0 && !oppVcfFound && !exactWinPoints(b, opp, st.near).length && !d3MovesF(b, opp).length) { // 对方有双活三在手时不抢造——先手方已由双活三校验裁决
+            var bp2 = -1, bs2 = -1;
+            for (var gi2 = 0; gi2 < myCrt.length; gi2++) { var gx2 = myCrt[gi2] % N, gy2 = (myCrt[gi2] / N) | 0; var gs2 = pointScore(b, gx2, gy2, aiColor) + pointScore(b, gx2, gy2, opp); if (gs2 > bs2) { bs2 = gs2; bp2 = myCrt[gi2]; } }
+            if (bp2 >= 0) { best = { idx: bp2, score: best.score }; bestIsMine = true; bi2 = bp2; }
+          }
+          if (!bestIsMine) {
+            // 造四反制豁免：成活四（成五点 ≥2）对方堵不完、直接胜；成冲四/断点四（成五点 1 个）时
+            // 对方被迫堵该点——仅当堵点不顺带完成其造点时豁免成立
+            var counterOk = false;
+            if (myWp.length >= 2) counterOk = true;
+            else if (myWp.length === 1) {
+              b[bi2] = aiColor; b[myWp[0]] = opp; var oppThen = crtMovesF(b, opp); b[myWp[0]] = 0; b[bi2] = 0;
+              counterOk = !oppThen.length;
+            }
+            if (!counterOk) {
+              b[bi2] = aiColor; var left0 = crtMovesF(b, opp); b[bi2] = 0;
+              if (left0.length) {
+                // 破坏点候选：各造点手本身 ∪ 其造出的活四点 ∪ 各活四的成五点（堵端把活四降格为冲四亦可）
+                var candSet = {};
+                for (var mi2 = 0; mi2 < oppCrt.length; mi2++) {
+                  var mm2 = oppCrt[mi2]; candSet[mm2] = 1;
+                  b[mm2] = opp; var det2 = live4DetailF(b, opp);
+                  for (var qi2 = 0; qi2 < det2.length; qi2++) {
+                    candSet[det2[qi2].idx] = 1;
+                    b[det2[qi2].idx] = opp; var wp2 = winPointsThrough(b, det2[qi2].idx, opp); b[det2[qi2].idx] = 0;
+                    for (var wi2 = 0; wi2 < wp2.length; wi2++) candSet[wp2[wi2]] = 1;
+                  }
+                  b[mm2] = 0;
+                }
+                var pp2 = -1, ps2 = -1;
+                for (var key3 in candSet) {
+                  var ci2 = +key3;
+                  if (b[ci2] !== 0) continue;
+                  b[ci2] = aiColor; var okSpoil = crtMovesF(b, opp).length === 0 && d3MovesF(b, opp).length === 0; b[ci2] = 0; // 双重清空：破坏点须同时不放生对方双活三
+                  if (okSpoil) { var sx2 = ci2 % N, sy2 = (ci2 / N) | 0; var ss2 = pointScore(b, sx2, sy2, aiColor) + pointScore(b, sx2, sy2, opp); if (ss2 > ps2) { ps2 = ss2; pp2 = ci2; } }
+                }
+                if (pp2 >= 0) best = { idx: pp2, score: best.score };
+              }
+            }
           }
         }
       }
